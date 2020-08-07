@@ -22,18 +22,29 @@
 ;; You should have received a copy of the GNU General Public License
 ;; along with getword.el.
 ;; If not, see <http://www.gnu.org/licenses/>.;;
+;;
+;;; Commentary:
+;;  Check github readme.
 
 ;;; Code:
 (require 'jeison)
 (require 'url)
 (require 'dash)
 (require 's)
+(require 'cl-seq)
 
 (defgroup org-getword nil
-  "Package Group"
-  :group 'tools)
+  "Make it easy to deal with words and key terms."
+  :prefix "org-getword-"
+  :group 'tool
+  :link '(url-link :tag "Repository" "https://github.com/tami5/org-getword"))
 
 (defcustom org-getword-lingua-api-key nil
+  "Api key for  to https://www.linguarobot.io/."
+  :type 'string
+  :group 'org-getword)
+
+(defcustom org-getword-azure-translation-api-key nil
   "Api key for  to https://www.linguarobot.io/."
   :type 'string
   :group 'org-getword)
@@ -86,20 +97,6 @@
     (pronu :initarg :pronu :type (list-of lingua-pronu) :path (entries 0 pronunciations))
     (lexem :initarg :lexem :type (list-of lingua-lexemes) :path (entries 0 lexemes))))
 
-;; ;;;###autoload
-;; (defun org-getword-lookup-at-point ()
-;;   "Lookup a word definition from current word under cursor."
-;; )
-
-;; ;;;###autoload
-;; (defun org-getword-lookup ()
-;;   "From prompt, lookup word definition."
-;; )
-;; ;;;###autoload
-;; (defun org-getword-append-at-point ()
-;;   "Append current word under cursor to 'org-getword-capture-file-location'."
-;; )
-
 ;;;###autoload
 (defun org-getword-append-from-clipboard ()
   "From clipboard, silently append a formated org entry to 'org-getword-capture-file-location'."
@@ -109,7 +106,6 @@
     (insert (org-getword--format-org-entry (org-getword--fetch-from-lingua (org-getword--misc-get-clipboard-content))))
     (append-to-file (point-min) (point-max) org-getword-capture-file-location)
   ))
-
 
 ;;;###autoload
 (defun org-getword-append-from-prompt ()
@@ -133,7 +129,7 @@
 ;;;###autoload
 (defun org-getword-insert-from-prompt ()
   "From prompt, insert a formated org entry."
-  (with-current-buffer
+  (with-temp-buffer
     (insert (org-getword--format-org-entry (org-getword--fetch-from-lingua (read-string "Word: "))))
     (buffer-string)))
 
@@ -178,24 +174,35 @@
   "Play audio from a `URL'."
   ;; TODO: support other platfroms
   ;;(interactive)
-  (start-process "mpg123" nil "mpg123" "" url))
+  (start-process "mpv" nil "mpv" "" url))
 
+;;;###autoload
+(defun org-getword-define-at-point (word-point)
+  "Find word at `WORD-POINT', look it up, and present a list of definitions for it."
+  (interactive (list (point)))
+  (save-mark-and-excursion
+    (unless (org-getword--misc-is-at-the-beginning-of-word word-point)
+      (backward-word))
+    (set-mark (point))
+    (forward-word)
+    (activate-mark)
+    (message (org-getword--fetch-definitions-from-wordnik (buffer-substring (region-beginning) (region-end)))))
+  )
 
-;; (defun org-getword--format-org-entry (lingua)
-;;   "Format an org entry for a new WORD, from `LINGUA' Object."
-;;   (with-temp-buffer
-;;     (goto-char (point-min))
-;;     (insert (concat "[[[elisp:(org-getword-play-audio \"" ;; TODO: Make this section more customizable.
-;;                     (org-getword--parse-audio-url lingua) "\")]["
-;;                     (oref lingua entry) "]]]" " :drill:\n"
-;;                     ":PROPERTIES:\n:DRILL_CARD_TYPE: twosided\n:END:"))
-;;     (insert (concat "\n** Word\n" (oref lingua entry)))
-;;     (insert (concat "\n** Meaning\n" (org-getword--parse-definitions lingua) "\n"))
-;;     (if org-getword-include-usage-description
-;;         (insert (concat "\n** Description\n\n" (org-getword--fetch-from-vocabulary (oref lingua entry)) "\n")))
-;;     (if org-getword-include-forms
-;;       (insert (concat "** Forms\n" (org-getword--parse-forms lingua))))
-;;     (buffer-string)))
+;;;###autoload
+(defun org-getword-speak-content (start end)
+  "Speak selected region. START END."
+  (interactive "r")
+  (save-excursion
+    (let ((content
+           (if (use-region-p)
+               (buffer-substring start end)
+             (thing-at-point 'line))))
+      (org-getword-play-audio
+       (org-getword--fetch-audio
+        (s-replace-regexp
+         (rx (or "*" "[" "]" "#" "/" "~" ":drill:")) ""
+         content))))))
 
 (defun org-getword--format-org-entry (lingua)
   "Format an org entry for a new WORD, from `LINGUA' Object."
@@ -355,28 +362,14 @@ Each form shall be in a heading with elisp function to fetch usage examples."
     (buffer-string)
     ))
 
-(defun org-getword--parse-synonyms (lingua)
-  "Parse and format synonyms based on `LINGUA' object."
-  ;; TODO FIXME: Doesn't work
-  (with-temp-buffer
-    ((let ((synonyms
-            (cdr
-             (car
-              (aref
-               (car
-                (mapcar
-                 (lambda (item)
-                   (oref item synonymSets))
-                 (oref source lexem))) 0)))
-                    )))
-    (goto-char (point-min))
-    (insert
-     (mapconcat ;; convert to string
-      'identity
-      (append (locate-synonyms lingua) nil) ;; convert to list
-      ", ")))
-    (buffer-string)
-  ))
+
+(defun org-getword--fetch-audio (content)
+  "Fetch audio file for a word or phrase represented as CONTENT."
+  (concat
+        "https://microsoft-azure-translation-v1.p.rapidapi.com/Speak?text="
+        (url-hexify-string content) "&language=en&"
+        "&rapidapi-key=" org-getword-azure-translation-api-key
+        "&rapidapi-host=microsoft-azure-translation-v1.p.rapidapi.com"))
 
 (defun org-getword--fetch-definitions-from-wordnik (word)
   "Fetch definitions from wordnik.com, accepts WORD and return list of definitions."
@@ -494,6 +487,21 @@ Each form shall be in a heading with elisp function to fetch usage examples."
     (buffer-string)
     ))
 
+(defun org-getword--misc-is-at-the-beginning-of-word (word-point)
+  "Predicate to check whether `WORD-POINT' points to the beginning of the word."
+  (save-excursion
+    ;; If we are at the beginning of a word
+    ;; this will take us to the beginning of the previous word.
+    ;; Otherwise, this will take us to the beginning of the current word.
+    (backward-word)
+    ;; This will take us to the end of the previous word or to the end
+    ;; of the current word depending on whether we were at the beginning
+    ;; of a word.
+    (forward-word)
+    ;; Compare our original position with wherever we're now to
+    ;; separate those two cases
+    (< (point) word-point)))
+
 (defun org-getword--misc-fix-formating-issues ()
   "A growing collection to fix stuff like &#39;."
   (org-getword--misc-replace-all-match "&#39;" "'")
@@ -549,3 +557,4 @@ Each form shall be in a heading with elisp function to fetch usage examples."
 
 (provide 'org-getword)
 ;;; org-getword.el ends here
+
