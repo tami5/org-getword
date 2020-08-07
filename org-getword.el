@@ -101,22 +101,16 @@
 (defun org-getword-append-from-clipboard ()
   "From clipboard, silently append a formated org entry to 'org-getword-capture-file-location'."
   (interactive)
-  (with-temp-buffer
-    (insert "\n *")
-    (insert (org-getword--format-org-entry (org-getword--fetch-from-lingua (org-getword--misc-get-clipboard-content))))
-    (append-to-file (point-min) (point-max) org-getword-capture-file-location)
-  ))
+  (org-getword--append (org-getword--misc-get-clipboard-content))
+  )
 
 ;;;###autoload
 (defun org-getword-append-from-prompt ()
   "From prompt, append a formated org entry to 'org-getword-capture-file-location'."
   (interactive)
-  (with-temp-buffer
-    (insert "\n *")
-    (insert (org-getword--format-org-entry (org-getword--fetch-from-lingua (read-string "Word: "))))
-    (append-to-file (point-min) (point-max) org-getword-capture-file-location)
-  ))
-
+  (org-getword--append
+   (read-string "Word: ") ;; TODO: add autocompletion
+   ))
 
 ;;;###autoload
 (defun org-getword-insert-from-clipboard ()
@@ -167,8 +161,6 @@
     (set-mark (line-end-position))
     (insert (concat "\n" (org-getword--fetch-definitions-from-wordnik word)))))
 
-
-
 ;;;###autoload
 (defun org-getword-play-audio (url)
   "Play audio from a `URL'."
@@ -204,11 +196,20 @@
          (rx (or "*" "[" "]" "#" "/" "~" ":drill:")) ""
          content))))))
 
+(defun org-getword--append (word)
+  "Silently append a WORD formated org entry to 'org-getword-capture-file-location'."
+   ;; (interactive)
+  (with-temp-buffer
+    (insert "\n* ")
+    (insert (org-getword--format-org-entry (org-getword--fetch-from-lingua word)))
+    (append-to-file (point-min) (point-max) org-getword-capture-file-location)
+  ))
+
 (defun org-getword--format-org-entry (lingua)
   "Format an org entry for a new WORD, from `LINGUA' Object."
   (with-temp-buffer
     (goto-char (point-min))
-    (insert (concat "[[[elisp:(org-getword-play-audio \"" (org-getword--parse-audio-url lingua) "\")][" (oref lingua entry) "]]]" " :drill:\n"))
+    (insert (concat "[[elisp:(org-getword-play-audio \"" (org-getword--parse-audio-url lingua) "\")][" (oref lingua entry) "]]" " :drill:\n"))
     (if org-getword-use-simple-entry
         (progn
           (insert (org-getword--simple-fetch-from-vocabulary (oref lingua entry)))
@@ -216,7 +217,7 @@
           (insert "\n")
           (insert (org-getword--simple-parse-forms lingua))
           (insert (concat "\n** [[elisp:(org-getword-insert-usage-examples \"" (oref lingua entry) "\")][Examples]]"))
-          (insert (concat "\n** [[elisp:(org-getword-definitions \"" (oref lingua entry) "\")][More Definitions]]"))
+          (insert (concat "\n** [[elisp:(org-getword-insert-definitions \"" (oref lingua entry) "\")][More Definitions]]"))
           )
       (progn
         (insert ":PROPERTIES:\n:DRILL_CARD_TYPE: twosided\n:END:")
