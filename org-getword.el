@@ -444,9 +444,9 @@ Each form shall be in a heading with elisp function to fetch usage examples."
                (org-getword--misc-replace-all-match cleanup ""))
              (org-getword--misc-replace-all-match "^.\\{140,\\}.*" "")
              (org-getword--misc-mark-keyword word)
-
+             (org-getword--misc-delete-duplicated-lines)
              (buffer-string))))
-      (-take 4 (delete "" (remove-duplicates (s-lines result))))))
+      (-take 4 (delete "" (s-lines result)))))
 
 
 (defun org-getword--fetch-from-vocabulary (word)
